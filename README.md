@@ -74,7 +74,8 @@ gsearch status          # show profile + trust state
 | `--json` | Shortcut for `--format json` |
 | `--no-snippets` | Hide snippets in text output |
 | `--no-urls` | Hide URLs in text output |
-| `--navigate-resolve` | Resolve opaque `google.com/goto` links to real URLs (slow) |
+| `--navigate-resolve` | Resolve opaque `google.com/goto` links to real URLs (slow). **Automatic for `text`, `markdown`, and `urls` output.** |
+| `--no-resolve` | Do not auto-resolve `google.com/goto` links |
 | `--headless` | Run hidden (may trigger Google's block) |
 | `--wait MS` | ms to wait after page load (default 2500) |
 | `--captcha-wait S` | Seconds to wait for you to solve a CAPTCHA (default 180) |
@@ -104,7 +105,7 @@ gsearch "trump zelensky" --news --navigate-resolve
 # JSON for scripting
 gsearch "openai" -n 20 --format json | jq '.results[].url'
 
-# Only the URLs
+# Only the URLs (auto-resolved to real destinations)
 gsearch "rust async book" --format urls
 
 # Markdown (great for notes)

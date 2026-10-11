@@ -70,7 +70,10 @@ def resolve_redirect(url: str) -> str:
                     return m.group(0).decode("utf-8", "ignore")
             except Exception:
                 pass
-        return "(google redirect)"
+        # Undecodable: return the original (navigable) redirect URL rather
+        # than a marker, so the link is still usable. Use --navigate-resolve
+        # (automatic for --format urls) to get the final destination.
+        return url
     return url
 
 
@@ -108,16 +111,28 @@ EXTRACT_JS = r"""
     return s;
   };
 
-  const push = (title, source, url, cite, snippet) => {
+  // A cite ending in "…" or "..." is truncated by Google and is not a
+  // full URL; treat it as a hint only.
+  const citeTruncated = (s) => /(\.\.\.|…)\s*$/.test((s || '').trim());
+
+  const push = (title, source, anchor, cite, snippet) => {
     title = clean(title);
     snippet = clean(snippet);
     source = clean(source);
-    const real = citeToUrl(cite) || (url || '').trim();
+    anchor = (anchor || '').trim();
+    const citeUrl = citeToUrl(cite);
+    // Prefer the anchor href: it is a complete (navigable) URL, possibly a
+    // google redirect. Use the cite only as a fallback, and never when the
+    // cite is visibly truncated.
+    let url = anchor || '';
+    if (!url) {
+      url = citeTruncated(cite) ? '' : citeUrl;
+    }
     if (!title) return;
-    url = real || (url || '').trim();
     if (seen.has(title)) return;
     seen.add(title);
-    out.push({ title, source, url, snippet, _raw_url: (url || '').trim() });
+    out.push({ title, source, url, cite: citeUrl, snippet,
+               _raw_url: url || '' });
   };
 
   document.querySelectorAll('h3').forEach(h3 => {
@@ -363,8 +378,8 @@ def search(
             if navigate_resolve:
                 for r in results:
                     u = r.get("url") or ""
-                    if "google.com/goto" in u or u == "(google redirect)" or not u:
-                        orig = r.get("_raw_url") or ""
+                    if "google.com/goto" in u or not u:
+                        orig = r.get("_raw_url") or u
                         if not orig:
                             continue
                         try:

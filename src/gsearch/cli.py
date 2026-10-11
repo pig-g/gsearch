@@ -356,7 +356,11 @@ def build_parser() -> argparse.ArgumentParser:
     l.add_argument("--navigate-resolve", action="store_true",
                    help="resolve opaque google.com/goto links to their real "
                         "destination URLs by loading each one (slower, but gives "
-                        "full article URLs, especially useful with --news)")
+                        "full article URLs). Automatic for text/markdown/urls "
+                        "output; use --no-resolve to disable.")
+    l.add_argument("--no-resolve", action="store_true",
+                   help="do not auto-resolve google.com/goto links even for "
+                        "formats that normally resolve them")
 
     b = ap.add_argument_group("browser options")
     b.add_argument("--headless", action="store_true",
@@ -445,7 +449,11 @@ def main(argv: List[str] | None = None) -> int:
             news=args.news,
             lang=args.lang,
             headless=args.headless,
-            navigate_resolve=args.navigate_resolve,
+            # Resolve redirect links for formats where the URL is the point
+            # (urls, text, markdown) unless the user opted out.
+            navigate_resolve=args.navigate_resolve or (
+                args.format in {"urls", "text", "markdown"} and not args.no_resolve
+            ),
             tbs=args.tbs,
             wait_ms=args.wait,
             captcha_wait_s=args.captcha_wait,
