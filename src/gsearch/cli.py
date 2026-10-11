@@ -19,6 +19,7 @@ from .profile import (
     save_state,
     mark_trusted,
     mark_blocked,
+    mark_captcha,
     profile_exists,
     browser_installed,
     install_hint,
@@ -114,7 +115,8 @@ def profile_report(profile: str, state: ProfileState) -> str:
         f"initialized : {state.initialized}",
         f"trusted     : {state.trusted}",
         f"last trusted: {_human_age(state.trust_age_seconds)}",
-        f"captcha done: {state.captcha_passes}",
+        f"trust events: {state.trust_events}",
+        f"captchas seen: {state.captchas_seen}",
         f"recent blocks: {state.consecutive_blocks}",
     ]
     return "\n".join(lines)
@@ -191,13 +193,20 @@ def _cmd_init(args) -> int:
         lock.release()
 
     history = result["history"]
+    captchas = result.get("captchas", 0)
     _err("")
     for i, ok in enumerate(history, 1):
         mark = _c("ok", "32") if ok else _c("blocked", "31")
         _err(f"  visit {i}: {mark}")
+    if captchas:
+        _err(f"  ({captchas} CAPTCHA page(s) solved)")
 
     if result["trusted"]:
         mark_trusted(state)
+        if captchas:
+            mark_captcha(state)
+            # mark_captcha counts one; record the true number seen.
+            state.captchas_seen += max(0, captchas - 1)
         save_state(state, profile)
         _err(_c("\n✓ Profile initialized and trusted.", "32"))
         _err("  You can now search normally, e.g.:")
@@ -209,6 +218,9 @@ def _cmd_init(args) -> int:
 
     mark_blocked(state)
     state.initialized = True
+    if captchas:
+        mark_captcha(state)
+        state.captchas_seen += max(0, captchas - 1)
     save_state(state, profile)
     _err(_c("\n✗ Google still showed 'unusual traffic'.", "33"))
     _err("  Google trust often takes more than one visit. Try again:")
@@ -450,6 +462,8 @@ def main(argv: List[str] | None = None) -> int:
             lock.release()
 
     # Update trust state based on the outcome.
+    if data.get("captcha") or data.get("captcha_seen"):
+        mark_captcha(state)
     if data["blocked"]:
         mark_blocked(state)
         save_state(state, profile)

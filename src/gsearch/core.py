@@ -259,6 +259,7 @@ def warmup(
     profile = profile_dir()
     os.makedirs(profile, exist_ok=True)
     history: list[bool] = []
+    captcha_count = 0
 
     with sync_playwright() as p:
         ctx = _launch(p, profile, headless)
@@ -280,6 +281,7 @@ def warmup(
 
                 page.wait_for_timeout(wait_ms)
                 if is_blocked(page) and not headless:
+                    captcha_count += 1
                     if verbose:
                         print(
                             "  [!] CAPTCHA / 'unusual traffic' shown — solve it in "
@@ -304,6 +306,7 @@ def warmup(
         "trusted": bool(history) and history[-1] and all(history),
         "passes": sum(1 for h in history if h),
         "blocked": bool(history) and not history[-1],
+        "captchas": captcha_count,
         "history": history,
     }
 
@@ -331,12 +334,14 @@ def search(
 
     with sync_playwright() as p:
         ctx = _launch(p, profile, headless)
+        captcha_seen = False
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto(url, wait_until="domcontentloaded")
             page.wait_for_timeout(wait_ms)
 
             if is_blocked(page) and not headless:
+                captcha_seen = True
                 if verbose:
                     print(
                         "[!] CAPTCHA / 'unusual traffic' detected. Solve it in the "
@@ -384,6 +389,7 @@ def search(
         "final_url": final_url,
         "page_title": title,
         "blocked": blocked,
+        "captcha": captcha_seen,
         "count": len(results),
         "results": results,
     }

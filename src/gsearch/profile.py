@@ -32,7 +32,12 @@ class ProfileState:
     last_trusted_at: float = 0.0
     last_blocked_at: float = 0.0
     consecutive_blocks: int = 0
-    captcha_passes: int = 0
+    # Number of times a CAPTCHA / 'unusual traffic' page was actually shown
+    # to the user during setup or a search.
+    captchas_seen: int = 0
+    # Number of successful trust establishments (a search or warmup that
+    # returned results without being blocked).
+    trust_events: int = 0
     version: int = 1
 
     @property
@@ -88,7 +93,15 @@ def mark_trusted(state: ProfileState) -> ProfileState:
         state.created_at = time.time()
     state.last_trusted_at = time.time()
     state.consecutive_blocks = 0
-    state.captcha_passes += 1
+    state.trust_events += 1
+    return state
+
+
+def mark_captcha(state: ProfileState) -> ProfileState:
+    """Record that a CAPTCHA / 'unusual traffic' page was shown."""
+    if not state.created_at:
+        state.created_at = time.time()
+    state.captchas_seen += 1
     return state
 
 
