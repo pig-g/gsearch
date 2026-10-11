@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gsearch"
+version = "0.1.0"
+description = "Google search from the command line via a headed Playwright browser (bypasses Google's automation block)."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "mac5" }]
+keywords = ["google", "search", "playwright", "cli", "scraper"]
+dependencies = [
+    "playwright>=1.40",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+gsearch = "gsearch.cli:main"
+
+[project.urls]
+Homepage = "https://example.com/gsearch"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
