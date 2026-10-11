@@ -49,7 +49,9 @@ def _print_text(data: dict, show_snippets: bool, show_urls: bool) -> None:
     if data["blocked"]:
         print(_c("BLOCKED (Google 'unusual traffic')", "31"), file=sys.stderr)
         return
-    print(_c(f"# {data['count']} results for: {data['query']}", "1"))
+    pages = data.get("pages_fetched", 1)
+    suffix = f"  ({pages} pages)" if pages > 1 else ""
+    print(_c(f"# {data['count']} results for: {data['query']}", "1") + _c(suffix, "2"))
     print()
     for i, r in enumerate(data["results"], 1):
         title = _c(r["title"], "1")
@@ -307,6 +309,12 @@ def build_parser() -> argparse.ArgumentParser:
             "  gsearch \"openai\" -n 20 --format json | jq '.results[].url'\n"
             "      Machine-readable JSON, pipe into jq.\n"
             "\n"
+            "  gsearch \"nvidia rma\" --pages 3\n"
+            "      Follow Google's \"Next\" link to fetch 3 result pages.\n"
+            "\n"
+            "  gsearch \"nvidia rma\" --all --format urls\n"
+            "      Every available page, URLs only (follows Next until the end).\n"
+            "\n"
             "  gsearch \"rust async book\" --format urls\n"
             "      Print only the result URLs, one per line.\n"
             "\n"
@@ -330,7 +338,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     g = ap.add_argument_group("search options")
     g.add_argument("-n", "--num", type=int, default=10, metavar="N",
-                   help="maximum number of results to request (default: %(default)s)")
+                   help="results requested per page (default: %(default)s)")
+    g.add_argument("-p", "--pages", type=int, default=1, metavar="P",
+                   help="number of result pages to fetch by following 'Next' "
+                        "(default: %(default)s); Google shows ~10 per page")
+    g.add_argument("--all", dest="all_pages", action="store_true",
+                   help="follow 'Next' until there are no more pages "
+                        "(equivalent to a large --pages)")
     g.add_argument("--news", action="store_true",
                    help="search Google News (tbm=nws) instead of the web")
     g.add_argument("--lang", default="en", metavar="LANG",
@@ -457,6 +471,7 @@ def main(argv: List[str] | None = None) -> int:
             tbs=args.tbs,
             wait_ms=args.wait,
             captcha_wait_s=args.captcha_wait,
+            pages=(50 if args.all_pages else args.pages),
             verbose=not args.quiet,
         )
     except KeyboardInterrupt:

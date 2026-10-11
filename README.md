@@ -66,7 +66,9 @@ gsearch status          # show profile + trust state
 
 | Option | Description |
 |---|---|
-| `-n, --num N` | Number of results (default 10) |
+| `-n, --num N` | Results requested per page (default 10) |
+| `-p, --pages P` | Number of result pages to fetch by following "Next" (default 1) |
+| `--all` | Follow "Next" until there are no more pages |
 | `--news` | Search Google News (`tbm=nws`) |
 | `--lang en` | Interface language (default `en`) |
 | `--tbs qdr:d` | Time filter: `qdr:h` hour, `qdr:d` day, `qdr:w` week, `qdr:m` month |
@@ -98,6 +100,10 @@ gsearch status          # show profile + trust state
 ```bash
 # Basic web search
 gsearch "nvidia rma how to apply"
+
+# More results: follow Google's "Next" link
+gsearch "nvidia rma" --pages 3        # 3 pages (~30 results)
+gsearch "nvidia rma" --all            # every page available
 
 # News headlines with real article URLs
 gsearch "trump zelensky" --news --navigate-resolve

@@ -10,7 +10,7 @@ from .core import (
     profile_dir,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __all__ = [
     "search",
     "build_url",

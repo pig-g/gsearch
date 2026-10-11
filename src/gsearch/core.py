@@ -336,47 +336,99 @@ def search(
     tbs: Optional[str] = None,
     wait_ms: int = 2500,
     captcha_wait_s: int = 180,
+    pages: int = 1,
     verbose: bool = False,
 ) -> dict:
     """Run a Google search and return a result dict.
 
-    Returns keys: query, news, url, final_url, page_title, blocked, count,
-    results (list of {title, source, url, snippet}).
+    pages controls how many result pages to fetch (1 = first page only).
+    Google paginates at roughly 10 results per page; each extra page is
+    fetched by following the "Next" link.
+
+    Returns keys: query, news, url, final_url, page_title, blocked, captcha,
+    count, pages_fetched, results (list of {title, source, url, snippet}).
     """
     profile = profile_dir()
     os.makedirs(profile, exist_ok=True)
     url = build_url(query, news=news, lang=lang, num=num, tbs=tbs)
+    pages = max(1, pages)
+
+    # Follow the "Next" link up to `pages` times.
+    NEXT_JS = r"""
+    () => {
+      const a = document.querySelector('#pnnext');
+      return a ? a.href : '';
+    }
+    """
+
+    all_results: list[dict] = []
+    seen_titles: set[str] = set()
+    blocked = False
+    captcha_seen = False
+    final_url = url
+    title = ""
+    pages_fetched = 0
 
     with sync_playwright() as p:
         ctx = _launch(p, profile, headless)
-        captcha_seen = False
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            page.goto(url, wait_until="domcontentloaded")
-            page.wait_for_timeout(wait_ms)
 
-            if is_blocked(page) and not headless:
-                captcha_seen = True
-                if verbose:
-                    print(
-                        "[!] CAPTCHA / 'unusual traffic' detected. Solve it in the "
-                        "window; the browser continues automatically once results load.",
-                        file=sys.stderr,
-                        flush=True,
-                    )
-                waited = 0
-                while waited < captcha_wait_s:
-                    page.wait_for_timeout(1000)
-                    waited += 1
-                    if not is_blocked(page):
+            # ---- collect results page by page -------------------------------
+            current = url
+            for page_no in range(pages):
+                if verbose and page_no:
+                    print(f"  [page {page_no + 1}/{pages}] fetching…",
+                          file=sys.stderr, flush=True)
+
+                page.goto(current, wait_until="domcontentloaded")
+                page.wait_for_timeout(wait_ms)
+
+                if is_blocked(page) and not headless:
+                    captcha_seen = True
+                    if verbose:
+                        print(
+                            "[!] CAPTCHA / 'unusual traffic' detected. Solve it in "
+                            "the window; the browser continues automatically once "
+                            "results load.",
+                            file=sys.stderr, flush=True,
+                        )
+                    waited = 0
+                    while waited < captcha_wait_s:
+                        page.wait_for_timeout(1000)
+                        waited += 1
+                        if not is_blocked(page):
+                            break
+
+                page_results = page.evaluate(EXTRACT_JS)
+                pages_fetched += 1
+                for r in page_results:
+                    if r["title"] in seen_titles:
+                        continue
+                    seen_titles.add(r["title"])
+                    all_results.append(r)
+
+                if page_no < pages - 1:
+                    nxt = page.evaluate(NEXT_JS)
+                    if not nxt:
+                        if verbose:
+                            print(f"  (no more result pages after page "
+                                  f"{page_no + 1})", file=sys.stderr, flush=True)
                         break
+                    current = nxt
 
-            results = page.evaluate(EXTRACT_JS)
-            for r in results:
+            final_url = page.url
+            title = page.title()
+
+            # ---- resolve redirect links once, all at the end ----------------
+            for r in all_results:
                 r["url"] = resolve_redirect(r["url"])
 
             if navigate_resolve:
-                for r in results:
+                if verbose:
+                    print(f"  resolving {len(all_results)} result links…",
+                          file=sys.stderr, flush=True)
+                for r in all_results:
                     u = r.get("url") or ""
                     if "google.com/goto" in u or not u:
                         orig = r.get("_raw_url") or u
@@ -389,12 +441,10 @@ def search(
                             pass
 
             blocked = is_blocked(page)
-            final_url = page.url
-            title = page.title()
         finally:
             ctx.close()
 
-    for r in results:
+    for r in all_results:
         r.pop("_raw_url", None)
 
     return {
@@ -405,6 +455,7 @@ def search(
         "page_title": title,
         "blocked": blocked,
         "captcha": captcha_seen,
-        "count": len(results),
-        "results": results,
+        "pages_fetched": pages_fetched,
+        "count": len(all_results),
+        "results": all_results,
     }
