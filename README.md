@@ -126,7 +126,24 @@ gsearch "mechanical keyboards" --format csv > kb.csv
 | Variable | Purpose |
 |---|---|
 | `GSEARCH_PROFILE` | Override the persistent Chromium profile directory (default `~/.playwright-google-profile`) |
+| `GSEARCH_BIN` | Path to the `gsearch` binary (used by the OpenCode plugin) |
 | `NO_COLOR` | Disable ANSI colors in text output |
+
+## Use with agents (OpenCode)
+
+`gsearch` ships an [OpenCode](https://opencode.ai) integration that exposes it
+to agents in two ways: a **skill** (`SKILL.md`) that teaches agents how to call
+`gsearch`, and a **tool plugin** that registers a native `google_search` tool.
+
+```sh
+cd integrations/opencode
+./install.sh                 # copies into ~/.config/opencode
+opencode service restart
+```
+
+After restart, agents can search Google directly through the `google_search`
+tool. See [`integrations/opencode/README.md`](integrations/opencode/README.md)
+for details.
 
 ## Using it as a library
 
