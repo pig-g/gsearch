@@ -187,6 +187,127 @@ EXTRACT_JS = r"""
 """
 
 
+def _launch(playwright, profile: str, headless: bool):
+    """Launch a persistent Chromium context for the given profile."""
+    return playwright.chromium.launch_persistent_context(
+        user_data_dir=profile,
+        headless=headless,
+        args=CHROMIUM_ARGS,
+        user_agent=USER_AGENT,
+        viewport={"width": 1280, "height": 900},
+    )
+
+
+def check_trust(
+    lang: str = "en",
+    headless: bool = False,
+    wait_ms: int = 2500,
+    captcha_wait_s: int = 180,
+    verbose: bool = False,
+) -> dict:
+    """Load a Google page and report whether this profile/IP is trusted.
+
+    Returns {'trusted': bool, 'blocked': bool, 'page_title': str,
+             'final_url': str, 'captcha': bool}.
+    """
+    profile = profile_dir()
+    os.makedirs(profile, exist_ok=True)
+    with sync_playwright() as p:
+        ctx = _launch(p, profile, headless)
+        try:
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            page.goto("https://www.google.com/search?q=test&hl=" + lang,
+                      wait_until="domcontentloaded")
+            page.wait_for_timeout(wait_ms)
+            captcha = is_blocked(page)
+            if captcha and not headless:
+                waited = 0
+                while waited < captcha_wait_s:
+                    page.wait_for_timeout(1000)
+                    waited += 1
+                    if not is_blocked(page):
+                        captcha = False
+                        break
+            blocked = is_blocked(page)
+            return {
+                "trusted": not blocked,
+                "blocked": blocked,
+                "captcha": captcha,
+                "page_title": page.title(),
+                "final_url": page.url,
+            }
+        finally:
+            ctx.close()
+
+
+def warmup(
+    rounds: int = 3,
+    lang: str = "en",
+    headless: bool = False,
+    wait_ms: int = 2500,
+    captcha_wait_s: int = 300,
+    between_ms: int = 4000,
+    verbose: bool = False,
+) -> dict:
+    """Visit Google a few times to establish trust cookies.
+
+    Google often does not fully trust a fresh profile on the first visit, so
+    this performs several loads, pausing for the user to solve a CAPTCHA each
+    time it appears. Returns {'trusted': bool, 'passes': int, 'blocked': bool,
+    'history': [bool, ...]}.
+    """
+    profile = profile_dir()
+    os.makedirs(profile, exist_ok=True)
+    history: list[bool] = []
+
+    with sync_playwright() as p:
+        ctx = _launch(p, profile, headless)
+        try:
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            for i in range(max(1, rounds)):
+                if verbose:
+                    print(f"  [warmup {i + 1}/{rounds}] loading Google…",
+                          file=sys.stderr, flush=True)
+                try:
+                    page.goto("https://www.google.com/search?q=hello&hl=" + lang,
+                              wait_until="domcontentloaded")
+                except Exception as exc:
+                    if verbose:
+                        print(f"  [warmup {i + 1}] navigation error: {exc}",
+                              file=sys.stderr, flush=True)
+                    history.append(False)
+                    continue
+
+                page.wait_for_timeout(wait_ms)
+                if is_blocked(page) and not headless:
+                    if verbose:
+                        print(
+                            "  [!] CAPTCHA / 'unusual traffic' shown — solve it in "
+                            "the browser window. Waiting…",
+                            file=sys.stderr, flush=True,
+                        )
+                    waited = 0
+                    while waited < captcha_wait_s:
+                        page.wait_for_timeout(1000)
+                        waited += 1
+                        if not is_blocked(page):
+                            break
+                blocked = is_blocked(page)
+                history.append(not blocked)
+                # A short settle so cookies are written and Google sees a
+                # human-like gap between visits.
+                page.wait_for_timeout(between_ms)
+        finally:
+            ctx.close()
+
+    return {
+        "trusted": bool(history) and history[-1] and all(history),
+        "passes": sum(1 for h in history if h),
+        "blocked": bool(history) and not history[-1],
+        "history": history,
+    }
+
+
 def search(
     query: str,
     num: int = 10,
@@ -209,13 +330,7 @@ def search(
     url = build_url(query, news=news, lang=lang, num=num, tbs=tbs)
 
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(
-            user_data_dir=profile,
-            headless=headless,
-            args=CHROMIUM_ARGS,
-            user_agent=USER_AGENT,
-            viewport={"width": 1280, "height": 900},
-        )
+        ctx = _launch(p, profile, headless)
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto(url, wait_until="domcontentloaded")
